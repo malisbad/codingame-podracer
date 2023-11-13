@@ -10,7 +10,12 @@ macro_rules! parse_input {
  **/
 fn main() {
     // set initial values for the game run
+    let mut round_counter = 0;
     let initial_thrust = 100;
+    let mut opponent_prev_x: i32 = 0;
+    let mut opponent_prev_y: i32 = 0;
+    let mut self_prev_x: i32 = 0;
+    let mut self_prev_y: i32 = 0;
 
     // game loop
     loop {
@@ -29,6 +34,13 @@ fn main() {
         let opponent_x = parse_input!(inputs[0], i32);
         let opponent_y = parse_input!(inputs[1], i32);
 
+        if (round_counter == 0) {
+            self_prev_x = x;
+            self_prev_y = y;
+            opponent_prev_x = opponent_x;
+            opponent_prev_y = opponent_y;
+        }
+
         // mutable values based on calculations for final commands
         let mut new_thrust = initial_thrust;
         let mut new_facing_x = next_checkpoint_x;
@@ -37,6 +49,10 @@ fn main() {
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
+        let own_velocity = determine_velocity(self_prev_x, self_prev_y, x, y);
+        let opponent_velocity = determine_velocity(opponent_prev_x, opponent_prev_y, opponent_x, opponent_y);
+        eprintln!("Own velocity: {}", own_velocity.total);
+        eprintln!("Opponent velocity: {}", opponent_velocity.total);
         // TODO there is some equation that has the best power/velocity/turning radius, ask GPT
         // TODO there is some seed we can do to optimize for each course
         // TODO add a simple NN to optimize turning radius for the course after each run
@@ -78,25 +94,44 @@ fn main() {
             println!("{} {} BOOST", new_facing_x, new_facing_y)
         } else {
             println!("{} {} {}", new_facing_x, new_facing_y, new_thrust);
-        } 
+        }
+        round_counter = round_counter + 1;
     }
 }
 
 /**
     Calculate the intercept of the opponent give our position, their position, our velocity, and their velocity
 */
-fn calculate_intercept(target_x: i32, target_y: i32, pursuant_x: i32, pursuant_y: i32, target_velocity_x: i32, target_velocity_y: i32) -> (i32, i32) {
+fn pursuit_equation(target_position: (i32, i32), pursuer_speed: i32, target_speed: i32, initial_pursuer_position: (i32, i32)) -> (i32, i32) {
+    // Calculate the distance between the target and the pursuer
+    let dx = target_position.0 - initial_pursuer_position.0;
+    let dy = target_position.1 - initial_pursuer_position.1;
+    let distance_squared = dx*dx + dy*dy;
 
-};
+    // Calculate the relative speed
+    let relative_speed = pursuer_speed - target_speed;
+
+    // Calculate the time to intercept (approximated to the nearest integer)
+    let time_to_intercept = (distance_squared as f64).sqrt() as i32 / relative_speed;
+
+    // Predict the target's position at the time of intercept
+    let predicted_target_position = (
+        target_position.0 + target_speed * time_to_intercept,
+        target_position.1 + target_speed * time_to_intercept
+    );
+
+    // Return the predicted target position
+    predicted_target_position
+}
 
 /**
     Calculate the optimal turning radius for each destination after the course is mapped
 */
 fn calculate_optimal_turning_radius() -> (i32, i32) {
-    
-};
+    (0, 0)
+}
 
-struct Opponent_Velocity {
+struct OpponentVelocity {
     x: i32,
     y: i32,
     total: i32
@@ -105,4 +140,14 @@ struct Opponent_Velocity {
     Calcuates the opponent's current velocity based on their x, y movement. Returns a tuple of
     their x velocity, y velocity, and speed
 */
-fn determine_opponent_velocity(x1: i32, y1: i32, x2: i32, y2: i32) -> Opponent_Velocity;
+fn determine_velocity(x1: i32, y1: i32, x2: i32, y2: i32) -> OpponentVelocity {
+    let a = f64::sqrt((x1 - x2) as f64).round().abs() as i32;
+    let b = f64::sqrt((y1 - y2) as f64).round().abs() as i32;
+    let total = a + b;
+
+    OpponentVelocity {
+        x: a,
+        y: b,
+        total: total,
+    }
+}
