@@ -1,4 +1,5 @@
 use std::io;
+use std::f64::consts::PI;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
@@ -68,6 +69,7 @@ fn main() {
         let mut new_facing_x = next_checkpoint_x;
         let mut new_facing_y = next_checkpoint_y;
         let mut should_boost = false;
+        let mut boost_remaining: i32 = 1;
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
@@ -83,12 +85,12 @@ fn main() {
             isn't in line with the target destination. This should result in maximum loss of ground by the
             opponent. Even better if we can knock them out just before the move over a target destination.
         */
-        let intercept_target = pursuit_equation(&opponent.current_pos, &own.velocity.speed, &opponent.velocity.speed, &own.current_pos);
+        let target_destination = Position { x: next_checkpoint_x, y: next_checkpoint_y}; //for testing, will assume the same target
+        let intercept_target = pursuit_equation(&opponent.current_pos, &target_destination, &own.velocity.speed, &opponent.velocity.speed, &own.current_pos);
         match intercept_target {
-            None => eprintln!("No intercept possible"),
+            None => eprintln!("No solution found for intercept"),
             Some(intercept) => eprintln!("Intercept target: {}, {}", intercept.x, intercept.y),
         }
-        
 
         let distance_between_players = calculate_distance(&own.current_pos, &opponent.current_pos);
         if distance_between_players < 850 {
@@ -119,13 +121,15 @@ fn main() {
         }
         
         // TODO Boosting in to an opponent, hitting the shield and then rocketing them off course
-        if next_checkpoint_dist > 4000 && next_checkpoint_angle < 15 && next_checkpoint_angle > -15 {
+        if boost_remaining > 0 && next_checkpoint_dist > 4000 && next_checkpoint_angle < 15 && next_checkpoint_angle > -15 {
             should_boost = true;
+            boost_remaining = boost_remaining - 1;
             eprintln!("Next destimation is at {} degrees at {} units, boosting", next_checkpoint_angle, next_checkpoint_dist);
         }
         
         if should_boost {
-            println!("{} {} BOOST", new_facing_x, new_facing_y)
+            println!("{} {} BOOST", new_facing_x, new_facing_y);
+            should_boost = false;
         } else {
             println!("{} {} {}", new_facing_x, new_facing_y, new_thrust);
         }
@@ -189,26 +193,58 @@ fn calculate_distance(current_position: &Position, prev_position: &Position) -> 
 /**
     Calculate the intercept of the opponent give our position, their position, our velocity, and their velocity
 */
-fn pursuit_equation(target_position: &Position, pursuer_speed: &i32, target_speed: &i32, initial_pursuer_position: &Position) -> Option<Position> {
-    // Calculate the distance between the target and the pursuer
-    let dx = target_position.x - initial_pursuer_position.x;
-    let dy = target_position.y - initial_pursuer_position.y;
-    let distance_squared = dx*dx + dy*dy;
+fn pursuit_equation(target_position: &Position, target_destination: &Position, pursuer_speed: &i32, target_speed: &i32, initial_pursuer_position: &Position) -> Option<Position> {
+    // constants
+    let max_velocity = 195; // determined through trial and error
+    let min_intercept_distance = 800;
+    let min_intercept_angle: f64 = 20.;
 
-    // Calculate the relative speed
-    let relative_speed = pursuer_speed - target_speed;
-    if relative_speed == 0 {
-        return None
+    // If the target's speed is higher than the maximum velocity, the pursuer will never catch the target
+    if target_speed > &max_velocity {
+        return None;
     }
 
-    // Calculate the time to intercept (approximated to the nearest integer)
-    let time_to_intercept = (distance_squared as f64).sqrt() as i32 / relative_speed;
+    // Calculate the target's path vector
+    let dx_path = target_destination.x - target_position.x;
+    let dy_path = target_destination.y - target_position.y;
+
+    // Calculate the distance to the destination
+    let distance_to_destination = ((dx_path*dx_path + dy_path*dy_path) as f64).sqrt();
+    
+    // If the target is within the minimum intercept distance of the destination, the pursuer cannot intercept
+    if distance_to_destination < min_intercept_distance as f64 {
+        return None;
+    }
+
+    // Calculate the time to destination
+    let time_to_destination = (distance_to_destination / *target_speed as f64).round() as i32;
 
     // Predict the target's position at the time of intercept
     let predicted_target_position = Position {
-        x: target_position.x + target_speed * time_to_intercept,
-        y: target_position.y + target_speed * time_to_intercept
+        x: target_position.x + dx_path * time_to_destination / target_speed,
+        y: target_position.y + dy_path * time_to_destination / target_speed,
     };
+
+    // Calculate the distance from the pursuer to the predicted position
+    let dx_pursuit = predicted_target_position.x - initial_pursuer_position.x;
+    let dy_pursuit = predicted_target_position.y - initial_pursuer_position.y;
+    let distance_to_intercept = ((dx_pursuit*dx_pursuit + dy_pursuit*dy_pursuit) as f64).sqrt();
+
+    // Calculate the time to intercept
+    let time_to_intercept = (distance_to_intercept / *pursuer_speed as f64).round() as i32;
+
+    // If the time to intercept is greater than the time to destination, the pursuer will not catch the target
+    if time_to_intercept > time_to_destination {
+        return None;
+    }
+
+    // Calculate the intercept angle
+    let intercept_angle = (dy_pursuit as f64).atan2(dx_pursuit as f64) * 180.0 / PI;
+
+    // If the intercept angle is less than the maximum intercept angle, return None
+    if intercept_angle.abs() < min_intercept_angle {
+        return None;
+    }
 
     // Return the predicted target position
     Some(predicted_target_position)
