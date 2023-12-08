@@ -4,18 +4,33 @@ macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
 }
 
+struct Velocity {
+    x: i32,
+    y: i32,
+    speed: i32
+}
+
+struct Position {
+    x: i32,
+    y: i32
+}
+
+struct Player {
+    prev_pos: Position,
+    current_pos: Position,
+    thrust: i32,
+    velocity: Velocity
+}
+
 /**
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  **/
 fn main() {
+    let mut opponent = Player::new();
+    let mut own = Player::new();
     // set initial values for the game run
     let mut round_counter = 0;
-    let initial_thrust = 100;
-    let mut opponent_prev_x: i32 = 0;
-    let mut opponent_prev_y: i32 = 0;
-    let mut self_prev_x: i32 = 0;
-    let mut self_prev_y: i32 = 0;
 
     // game loop
     loop {
@@ -34,25 +49,29 @@ fn main() {
         let opponent_x = parse_input!(inputs[0], i32);
         let opponent_y = parse_input!(inputs[1], i32);
 
-        if (round_counter == 0) {
-            self_prev_x = x;
-            self_prev_y = y;
-            opponent_prev_x = opponent_x;
-            opponent_prev_y = opponent_y;
+        // Set the previous position to be whatever comes from the game on the first round
+        if round_counter == 0 {
+            own.update_prev_pos(x, y);
+            opponent.update_prev_pos(opponent_x, opponent_y);
         }
+        
+        // update Player properties from the differences between previous round and this one
+        let new_self_velocity = determine_velocity(&own.current_pos, &own.prev_pos);
+        let new_opponent_velocity = determine_velocity(&opponent.current_pos, &opponent.prev_pos);
+        own.update_velocity(new_self_velocity);
+        opponent.update_velocity(new_opponent_velocity);
 
         // mutable values based on calculations for final commands
-        let mut new_thrust = initial_thrust;
+        let mut new_thrust = own.thrust;
         let mut new_facing_x = next_checkpoint_x;
         let mut new_facing_y = next_checkpoint_y;
         let mut should_boost = false;
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
-        let own_velocity = determine_velocity(self_prev_x, self_prev_y, x, y);
-        let opponent_velocity = determine_velocity(opponent_prev_x, opponent_prev_y, opponent_x, opponent_y);
-        eprintln!("Own velocity: {}", own_velocity.total);
-        eprintln!("Opponent velocity: {}", opponent_velocity.total);
+
+        eprintln!("Own velocity: {}", own.velocity.speed);
+        eprintln!("Opponent velocity: {}", opponent.velocity.speed);
         // TODO there is some equation that has the best power/velocity/turning radius, ask GPT
         // TODO there is some seed we can do to optimize for each course
         // TODO add a simple NN to optimize turning radius for the course after each run
@@ -83,9 +102,9 @@ fn main() {
             new_thrust = 0;
             eprintln!("Next destimation is at {} degrees at {} units, cutting thrust to {}", next_checkpoint_angle, next_checkpoint_dist, new_thrust);
         }
-
-        // TODO boost is used too sparingly, should make conditions a little less painful
-        if next_checkpoint_dist > 3000 && next_checkpoint_angle < 15 && next_checkpoint_angle > -15 {
+        
+        // TODO Boosting in to an opponent, hitting the shield and then rocketing them off course
+        if next_checkpoint_dist > 4000 && next_checkpoint_angle < 15 && next_checkpoint_angle > -15 {
             should_boost = true;
             eprintln!("Next destimation is at {} degrees at {} units, boosting", next_checkpoint_angle, next_checkpoint_dist);
         }
@@ -99,13 +118,67 @@ fn main() {
     }
 }
 
+// Factory for players
+impl Player {
+    fn new() -> Player {
+        Player {
+            prev_pos: Position {
+                x: 0,
+                y: 0
+            },
+            current_pos: Position {
+                x: 0,
+                y: 0
+            },
+            thrust: 100,
+            velocity: Velocity {
+                x: 0,
+                y: 0,
+                speed: 0
+            }
+        }
+    }
+
+    // Update methods
+    fn update_prev_pos(&mut self, x: i32, y: i32) {
+        self.prev_pos.x = x;
+        self.prev_pos.y = y;
+    }
+    
+    fn current_pos(&mut self, x: i32, y: i32) {
+        self.current_pos.x = x;
+        self.current_pos.y = y;
+    }
+
+    fn update_thrust(&mut self, thrust: i32) {
+        self.thrust = thrust;
+    }
+
+    fn update_velocity(&mut self, new_velocity: Velocity) {
+        self.velocity = new_velocity;
+    }
+}
+
+
+/**
+    Calculates the distance between two points on the map
+*/
+fn calculate_distance(current_position: Position, prev_position: Position) -> i32 {
+    let dx = current_position.x - prev_position.x;
+    let dy = current_position.y - prev_position.y;
+    let distance_squared = dx*dx + dy*dy;
+    let distance = (distance_squared as f64).sqrt() as i32;
+
+    distance
+}
+
 /**
     Calculate the intercept of the opponent give our position, their position, our velocity, and their velocity
 */
-fn pursuit_equation(target_position: (i32, i32), pursuer_speed: i32, target_speed: i32, initial_pursuer_position: (i32, i32)) -> (i32, i32) {
+fn pursuit_equation(target_position: Position, pursuer_speed: i32, target_speed: i32, initial_pursuer_position: Position) -> Position {
     // Calculate the distance between the target and the pursuer
-    let dx = target_position.0 - initial_pursuer_position.0;
-    let dy = target_position.1 - initial_pursuer_position.1;
+    let dx = target_position.x - initial_pursuer_position.x;
+    let dy = target_position.y - initial_pursuer_position.y;
     let distance_squared = dx*dx + dy*dy;
 
     // Calculate the relative speed
@@ -115,39 +188,36 @@ fn pursuit_equation(target_position: (i32, i32), pursuer_speed: i32, target_spee
     let time_to_intercept = (distance_squared as f64).sqrt() as i32 / relative_speed;
 
     // Predict the target's position at the time of intercept
-    let predicted_target_position = (
-        target_position.0 + target_speed * time_to_intercept,
-        target_position.1 + target_speed * time_to_intercept
-    );
+    let predicted_target_position = Position {
+        x: target_position.x + target_speed * time_to_intercept,
+        y: target_position.y + target_speed * time_to_intercept
+    };
 
     // Return the predicted target position
     predicted_target_position
 }
 
 /**
+    TODO
     Calculate the optimal turning radius for each destination after the course is mapped
 */
 fn calculate_optimal_turning_radius() -> (i32, i32) {
     (0, 0)
 }
 
-struct OpponentVelocity {
-    x: i32,
-    y: i32,
-    total: i32
-}
+
 /**
     Calcuates the opponent's current velocity based on their x, y movement. Returns a tuple of
     their x velocity, y velocity, and speed
 */
-fn determine_velocity(x1: i32, y1: i32, x2: i32, y2: i32) -> OpponentVelocity {
-    let a = f64::sqrt((x1 - x2) as f64).round().abs() as i32;
-    let b = f64::sqrt((y1 - y2) as f64).round().abs() as i32;
-    let total = a + b;
+fn determine_velocity(current: &Position, prev: &Position) -> Velocity {
+    let a = f64::sqrt((current.x - prev.x) as f64).round().abs() as i32;
+    let b = f64::sqrt((current.y - prev.y) as f64).round().abs() as i32;
+    let speed = a + b;
 
-    OpponentVelocity {
+    Velocity {
         x: a,
         y: b,
-        total: total,
+        speed: speed,
     }
 }
