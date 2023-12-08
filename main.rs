@@ -51,10 +51,12 @@ fn main() {
 
         // Set the previous position to be whatever comes from the game on the first round
         if round_counter == 0 {
-            own.update_prev_pos(x, y);
-            opponent.update_prev_pos(opponent_x, opponent_y);
+            own.update_prev_pos(own.current_pos.x, own.current_pos.y);
+            own.update_prev_pos(opponent.current_pos.x, opponent.current_pos.y);
         }
         
+        own.update_current_pos(x, y);
+        opponent.update_current_pos(opponent_x, opponent_y);
         // update Player properties from the differences between previous round and this one
         let new_self_velocity = determine_velocity(&own.current_pos, &own.prev_pos);
         let new_opponent_velocity = determine_velocity(&opponent.current_pos, &opponent.prev_pos);
@@ -81,6 +83,19 @@ fn main() {
             isn't in line with the target destination. This should result in maximum loss of ground by the
             opponent. Even better if we can knock them out just before the move over a target destination.
         */
+        let intercept_target = pursuit_equation(&opponent.current_pos, &own.velocity.speed, &opponent.velocity.speed, &own.current_pos);
+        match intercept_target {
+            None => eprintln!("No intercept possible"),
+            Some(intercept) => eprintln!("Intercept target: {}, {}", intercept.x, intercept.y),
+        }
+        
+
+        let distance_between_players = calculate_distance(&own.current_pos, &opponent.current_pos);
+        if distance_between_players < 850 {
+            eprintln!("COLLISION IMMINENT")
+        }
+        eprintln!("Distance between players: {}", distance_between_players);
+        // TODO Determine if the opponent is going after the same checkpoint or not
 
         /*
             If the turning angle is greater than hard left/right, reduce velocity to decrease turning radius
@@ -145,7 +160,7 @@ impl Player {
         self.prev_pos.y = y;
     }
     
-    fn current_pos(&mut self, x: i32, y: i32) {
+    fn update_current_pos(&mut self, x: i32, y: i32) {
         self.current_pos.x = x;
         self.current_pos.y = y;
     }
@@ -163,19 +178,18 @@ impl Player {
 /**
     Calculates the distance between two points on the map
 */
-fn calculate_distance(current_position: Position, prev_position: Position) -> i32 {
+fn calculate_distance(current_position: &Position, prev_position: &Position) -> i32 {
     let dx = current_position.x - prev_position.x;
     let dy = current_position.y - prev_position.y;
     let distance_squared = dx*dx + dy*dy;
     let distance = (distance_squared as f64).sqrt() as i32;
-
     distance
 }
 
 /**
     Calculate the intercept of the opponent give our position, their position, our velocity, and their velocity
 */
-fn pursuit_equation(target_position: Position, pursuer_speed: i32, target_speed: i32, initial_pursuer_position: Position) -> Position {
+fn pursuit_equation(target_position: &Position, pursuer_speed: &i32, target_speed: &i32, initial_pursuer_position: &Position) -> Option<Position> {
     // Calculate the distance between the target and the pursuer
     let dx = target_position.x - initial_pursuer_position.x;
     let dy = target_position.y - initial_pursuer_position.y;
@@ -183,6 +197,9 @@ fn pursuit_equation(target_position: Position, pursuer_speed: i32, target_speed:
 
     // Calculate the relative speed
     let relative_speed = pursuer_speed - target_speed;
+    if relative_speed == 0 {
+        return None
+    }
 
     // Calculate the time to intercept (approximated to the nearest integer)
     let time_to_intercept = (distance_squared as f64).sqrt() as i32 / relative_speed;
@@ -194,7 +211,7 @@ fn pursuit_equation(target_position: Position, pursuer_speed: i32, target_speed:
     };
 
     // Return the predicted target position
-    predicted_target_position
+    Some(predicted_target_position)
 }
 
 /**
