@@ -11,6 +11,9 @@ struct Velocity {
     speed: i32
 }
 
+#[derive(Debug)]
+#[derive(PartialEq)]
+#[derive(Clone)]
 struct Position {
     x: i32,
     y: i32
@@ -28,11 +31,14 @@ struct Player {
  * the standard input according to the problem statement.
  **/
 fn main() {
+    // TODO create a GameState struct that holds prev_state
     let mut opponent = Player::new();
     let mut own = Player::new();
     // set initial values for the game run
     let mut round_counter = 0;
-
+    let mut course_complete = false;
+    let mut course: Vec<Position> = Vec::new(); // vector for holding checkpoints
+    let mut prev_checkpoint = Position { x: 0, y: 0}; // state for previous checkpoint
     // game loop
     loop {
         let mut input_line = String::new();
@@ -50,10 +56,20 @@ fn main() {
         let opponent_x = parse_input!(inputs[0], i32);
         let opponent_y = parse_input!(inputs[1], i32);
 
+        let next_checkpoint = Position { x: next_checkpoint_x, y: next_checkpoint_y };
+
         // Set the previous position to be whatever comes from the game on the first round
         if round_counter == 0 {
             own.update_prev_pos(own.current_pos.x, own.current_pos.y);
             own.update_prev_pos(opponent.current_pos.x, opponent.current_pos.y);
+        }
+
+        // populate the course checkpoints for optimization
+        if course_complete == false && !course.is_empty() &&prev_checkpoint != next_checkpoint && course.contains(&next_checkpoint) {
+            course_complete = true;
+        } else if course_complete == false && prev_checkpoint != next_checkpoint {
+            course.push(next_checkpoint.clone());
+            prev_checkpoint = next_checkpoint;
         }
         
         own.update_current_pos(x, y);
